@@ -1,0 +1,17 @@
+Django>=4.2
+djangorestframework
+psycopg2-binary
+celery
+redis
+django-celery-results
+django-channels
+channels-redis
+gunicorn
+python-dotenv
+dj-database-url
+django-filter
+pytest
+pytest-django
+ruff
+flake8
+
