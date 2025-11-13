@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import redis
 from django.conf import settings
 from django.views.generic import TemplateView
 from rest_framework import permissions, status
@@ -12,15 +11,18 @@ from rest_framework.views import APIView
 
 from .models import UploadJob
 from .tasks import import_csv_task
-
-
-def _get_redis_client() -> redis.Redis:
-    redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
-    return redis.Redis.from_url(redis_url, decode_responses=True)
+from .utils.redis_client import get_redis_client
 
 
 class UploadPageView(TemplateView):
     template_name = "upload.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["delete_confirm_phrase"] = getattr(
+            settings, "PRODUCT_DELETE_CONFIRM_PHRASE", "DELETE ALL PRODUCTS"
+        )
+        return context
 
 
 class UploadCSVView(APIView):
@@ -86,7 +88,7 @@ class UploadProgressView(APIView):
 
     def get(self, request, task_id: str, *args, **kwargs):
         try:
-            data: Optional[str] = _get_redis_client().get(f"upload:{task_id}")
+            data: Optional[str] = get_redis_client().get(f"upload:{task_id}")
         except redis.RedisError:
             return Response(
                 {"task_id": task_id, "progress": None, "detail": "Unable to read progress."},

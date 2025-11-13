@@ -8,12 +8,23 @@
         body { font-family: Arial, sans-serif; margin: 2rem; max-width: 720px; }
         h1 { font-size: 1.8rem; }
         form { margin-bottom: 2rem; }
-        #progress-container { display: none; margin-top: 1.5rem; }
-        #progress-bar { width: 100%; height: 24px; border: 1px solid #888; border-radius: 4px; overflow: hidden; }
-        #progress-bar-fill { width: 0; height: 100%; background: #2b7fff; transition: width 0.3s ease; }
-        #status { margin-top: 0.5rem; font-weight: 500; }
-        #errors { margin-top: 1rem; color: #b00020; white-space: pre-wrap; }
-        button { padding: 0.5rem 1rem; font-size: 1rem; }
+        .actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+        #progress-container,
+        #delete-progress-container { display: none; margin-top: 1.5rem; }
+        .progress-bar { width: 100%; height: 24px; border: 1px solid #888; border-radius: 4px; overflow: hidden; }
+        .progress-bar-fill { width: 0; height: 100%; background: #2b7fff; transition: width 0.3s ease; }
+        .status-text { margin-top: 0.5rem; font-weight: 500; }
+        .errors-text { margin-top: 1rem; color: #b00020; white-space: pre-wrap; }
+        button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+        .danger { background: #d32f2f; color: #fff; border: none; }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-backdrop.show { display: flex; }
+        .modal { background: #fff; padding: 1.5rem; border-radius: 8px; max-width: 420px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .modal h2 { margin-top: 0; }
+        .modal-actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem; }
+        .confirmation-input { width: 100%; padding: 0.5rem; margin-top: 0.5rem; }
+        .hidden { display: none !important; }
+        .muted { color: #555; font-size: 0.9rem; margin-top: 0.5rem; }
     </style>
 </head>
 <body>
@@ -22,19 +33,47 @@
         {% csrf_token %}
         <label for="file">Choose CSV file (required)</label><br>
         <input type="file" id="file" name="file" accept=".csv" required>
-        <div style="margin-top: 1rem;">
+        <div class="actions" style="margin-top: 1rem;">
             <button type="submit">Start Upload</button>
+            <button type="button" id="delete-products-btn" class="danger">Delete All Products</button>
         </div>
     </form>
 
     <section id="progress-container">
         <h2>Progress</h2>
-        <div id="progress-bar">
-            <div id="progress-bar-fill"></div>
+        <div class="progress-bar">
+            <div id="progress-bar-fill" class="progress-bar-fill"></div>
         </div>
-        <div id="status">Waiting to start...</div>
-        <div id="errors"></div>
+        <div id="status" class="status-text">Waiting to start...</div>
+        <div id="errors" class="errors-text"></div>
     </section>
+
+    <section id="delete-progress-container">
+        <h2>Product Deletion Progress</h2>
+        <div class="progress-bar">
+            <div id="delete-progress-bar-fill" class="progress-bar-fill"></div>
+        </div>
+        <div id="delete-status" class="status-text">Waiting for deletion...</div>
+        <div id="delete-errors" class="errors-text"></div>
+    </section>
+
+    <div id="delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+        <div class="modal">
+            <h2 id="delete-modal-title">Confirm Deletion</h2>
+            <p>
+                You are about to delete <strong>all products</strong> from the database.
+                This action cannot be undone.
+            </p>
+            <p class="muted">
+                Type <code>{{ delete_confirm_phrase }}</code> to confirm.
+            </p>
+            <input type="text" id="confirm-phrase" class="confirmation-input" placeholder="Confirmation phrase">
+            <div class="modal-actions">
+                <button type="button" id="cancel-delete-btn">Cancel</button>
+                <button type="button" id="confirm-delete-btn" class="danger">Delete</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const form = document.getElementById('upload-form');
@@ -42,12 +81,25 @@
         const progressBarFill = document.getElementById('progress-bar-fill');
         const statusText = document.getElementById('status');
         const errorsEl = document.getElementById('errors');
-        let pollingInterval = null;
-        let socket = null;
+        const deleteButton = document.getElementById('delete-products-btn');
+        const deleteModal = document.getElementById('delete-modal');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+        const confirmPhraseInput = document.getElementById('confirm-phrase');
+        const deleteProgressContainer = document.getElementById('delete-progress-container');
+        const deleteProgressFill = document.getElementById('delete-progress-bar-fill');
+        const deleteStatusText = document.getElementById('delete-status');
+        const deleteErrorsEl = document.getElementById('delete-errors');
+        const deleteConfirmPhrase = "{{ delete_confirm_phrase|escapejs }}";
+
+        let uploadPollingInterval = null;
+        let uploadSocket = null;
+        let deletePollingInterval = null;
+        let deleteSocket = null;
 
         function getCookie(name) {
-            const value = ; ;
-            const parts = value.split(; =);
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
             if (parts.length === 2) return parts.pop().split(';').shift();
         }
 
@@ -56,19 +108,34 @@
                 return;
             }
             const percent = payload.percent ?? 0;
-            progressBarFill.style.width = ${percent}%;
-            statusText.textContent = ${payload.status || 'unknown'} � % (/ processed);
+            progressBarFill.style.width = `${percent}%`;
+            statusText.textContent = `${payload.status || 'unknown'} • ${percent}% (${payload.processed || 0}/${payload.total ?? '?'} processed)`;
             if (payload.errors && payload.errors > 0) {
-                statusText.textContent +=  �  errors;
+                statusText.textContent += ` • ${payload.errors} errors`;
             }
             if (payload.error) {
                 errorsEl.textContent = payload.error;
             }
         }
 
+        function updateDeleteProgress(payload) {
+            if (!payload) {
+                return;
+            }
+            const percent = payload.percent ?? 0;
+            deleteProgressFill.style.width = `${percent}%`;
+            deleteStatusText.textContent = `${payload.status || 'unknown'} • ${percent}% (${payload.processed || 0}/${payload.total ?? '?'} deleted)`;
+            if (payload.errors && payload.errors > 0) {
+                deleteStatusText.textContent += ` • ${payload.errors} errors`;
+            }
+            if (payload.error) {
+                deleteErrorsEl.textContent = payload.error;
+            }
+        }
+
         async function pollProgress(taskId) {
             try {
-                const response = await fetch(/api/uploads//progress/, { credentials: 'same-origin' });
+                const response = await fetch(`/api/uploads/${taskId}/progress/`, { credentials: 'same-origin' });
                 if (!response.ok) {
                     return;
                 }
@@ -79,42 +146,172 @@
             }
         }
 
-        function startPolling(taskId) {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
+        function startUploadPolling(taskId) {
+            if (uploadPollingInterval) {
+                clearInterval(uploadPollingInterval);
             }
             pollProgress(taskId);
-            pollingInterval = setInterval(() => pollProgress(taskId), 3000);
+            uploadPollingInterval = setInterval(() => pollProgress(taskId), 3000);
         }
 
-        function startWebSocket(taskId) {
+        function startUploadWebSocket(taskId) {
             const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            const wsUrl = ${protocol}:///ws/uploads//;
-            socket = new WebSocket(wsUrl);
-            socket.onmessage = (event) => {
+            const wsUrl = `${protocol}://${window.location.host}/ws/uploads/${taskId}/`;
+            uploadSocket = new WebSocket(wsUrl);
+            uploadSocket.onmessage = (event) => {
                 try {
                     const payload = JSON.parse(event.data);
                     updateProgress(payload);
                     if (payload.status === 'completed' || payload.status === 'failed') {
-                        if (pollingInterval) {
-                            clearInterval(pollingInterval);
+                        if (uploadPollingInterval) {
+                            clearInterval(uploadPollingInterval);
                         }
-                        socket.close();
+                        uploadSocket.close();
                     }
                 } catch (err) {
                     console.error('Invalid WS payload', err);
                 }
             };
-            socket.onerror = () => {
-                console.warn('WebSocket error, falling back to polling');
-                startPolling(taskId);
+            uploadSocket.onerror = () => {
+                console.warn('Upload WebSocket error, falling back to polling');
+                startUploadPolling(taskId);
             };
-            socket.onclose = () => {
-                if (!pollingInterval) {
-                    startPolling(taskId);
+            uploadSocket.onclose = () => {
+                if (!uploadPollingInterval) {
+                    startUploadPolling(taskId);
                 }
             };
         }
+
+        async function pollDeleteProgress(jobId) {
+            try {
+                const response = await fetch(`/api/products/deletion/${jobId}/progress/`, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    return;
+                }
+                const data = await response.json();
+                updateDeleteProgress(data.progress);
+            } catch (err) {
+                console.error('Deletion progress polling failed', err);
+            }
+        }
+
+        function startDeletePolling(jobId) {
+            if (deletePollingInterval) {
+                clearInterval(deletePollingInterval);
+            }
+            pollDeleteProgress(jobId);
+            deletePollingInterval = setInterval(() => pollDeleteProgress(jobId), 3000);
+        }
+
+        function startDeleteWebSocket(jobId) {
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsUrl = `${protocol}://${window.location.host}/ws/deletions/${jobId}/`;
+            deleteSocket = new WebSocket(wsUrl);
+            deleteSocket.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    updateDeleteProgress(payload);
+                    if (payload.status === 'completed' || payload.status === 'failed') {
+                        if (deletePollingInterval) {
+                            clearInterval(deletePollingInterval);
+                        }
+                        deleteSocket.close();
+                    }
+                } catch (err) {
+                    console.error('Invalid deletion WS payload', err);
+                }
+            };
+            deleteSocket.onerror = () => {
+                console.warn('Deletion WebSocket error, falling back to polling');
+                startDeletePolling(jobId);
+            };
+            deleteSocket.onclose = () => {
+                if (!deletePollingInterval) {
+                    startDeletePolling(jobId);
+                }
+            };
+        }
+
+        function openDeleteModal() {
+            confirmPhraseInput.value = '';
+            deleteErrorsEl.textContent = '';
+            deleteModal.classList.add('show');
+            deleteModal.classList.remove('hidden');
+            confirmPhraseInput.focus();
+        }
+
+        function closeDeleteModal() {
+            deleteModal.classList.remove('show');
+            deleteModal.classList.add('hidden');
+        }
+
+        deleteButton.addEventListener('click', openDeleteModal);
+        cancelDeleteBtn.addEventListener('click', closeDeleteModal);
+        deleteModal.addEventListener('click', (event) => {
+            if (event.target === deleteModal) {
+                closeDeleteModal();
+            }
+        });
+
+        confirmDeleteBtn.addEventListener('click', async () => {
+            const phrase = confirmPhraseInput.value.trim();
+            const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            if (deleteConfirmPhrase && phrase !== deleteConfirmPhrase) {
+                deleteErrorsEl.textContent = `Please type '${deleteConfirmPhrase}' to confirm.`;
+                return;
+            }
+
+            deleteProgressContainer.style.display = 'block';
+            deleteProgressFill.style.width = '0%';
+            deleteStatusText.textContent = 'Starting deletion...';
+            deleteErrorsEl.textContent = '';
+            confirmDeleteBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/products/', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify({ confirm: true, confirm_phrase: phrase }),
+                    credentials: 'same-origin',
+                });
+
+                if (response.status === 200) {
+                    const data = await response.json();
+                    deleteStatusText.textContent = `Completed deletion of ${data.deleted} products.`;
+                    deleteProgressFill.style.width = '100%';
+                    closeDeleteModal();
+                    return;
+                }
+
+                if (response.status === 202) {
+                    const data = await response.json();
+                    const jobId = data.job_id;
+                    deleteStatusText.textContent = `Deletion queued. Job ID: ${jobId}`;
+                    closeDeleteModal();
+
+                    if ('WebSocket' in window) {
+                        startDeleteWebSocket(jobId);
+                    } else {
+                        startDeletePolling(jobId);
+                    }
+                    return;
+                }
+
+                const error = await response.json().catch(() => ({ detail: 'Deletion request failed.' }));
+                throw new Error(error.detail || 'Deletion request failed.');
+            } catch (err) {
+                console.error(err);
+                deleteStatusText.textContent = 'Deletion failed.';
+                deleteErrorsEl.textContent = err.message;
+            } finally {
+                confirmDeleteBtn.disabled = false;
+            }
+        });
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -151,12 +348,12 @@
 
                 const data = await response.json();
                 const taskId = data.task_id;
-                statusText.textContent = Upload queued. Task ID: ;
+                statusText.textContent = `Upload queued. Task ID: ${taskId}`;
 
                 if ('WebSocket' in window) {
-                    startWebSocket(taskId);
+                    startUploadWebSocket(taskId);
                 } else {
-                    startPolling(taskId);
+                    startUploadPolling(taskId);
                 }
             } catch (err) {
                 console.error(err);

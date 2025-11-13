@@ -141,6 +141,19 @@ PRODUCT_IMPORT_BATCH_SIZE=5000
 
 Larger batches reduce COPY overhead but require more RAM; smaller batches provide more responsive progress updates.
 
+### Bulk deletion
+
+The UI (`/upload/`) includes a "Delete All Products" workflow. Configure thresholds in `.env`:
+
+```
+PRODUCT_BULK_DELETE_THRESHOLD=10000      # switch to async delete when record count exceeds this value
+PRODUCT_DELETE_BATCH_SIZE=1000           # batch size for incremental deletes
+PRODUCT_DELETE_TRUNCATE_THRESHOLD=200000 # use TRUNCATE when record count exceeds this
+PRODUCT_DELETE_CONFIRM_PHRASE="DELETE ALL PRODUCTS"
+```
+
+For counts below the threshold, deletion happens synchronously. Above it, a Celery task runs in the background; progress is broadcast over WebSockets (with Redis) and can be monitored on the upload page or via `GET /api/products/deletion/<job_id>/progress/`.
+
 Optional beat scheduler:
 
 ```bash

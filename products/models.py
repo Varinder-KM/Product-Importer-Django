@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 
@@ -50,4 +51,35 @@ class UploadJob(models.Model):
     @staticmethod
     def generate_task_id() -> str:
         return uuid.uuid4().hex
+
+
+class DeletionJob(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_PROGRESS = "in_progress", "In Progress"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    task_id = models.CharField(max_length=64, blank=True, null=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="product_deletion_jobs",
+    )
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.PENDING
+    )
+    total_count = models.IntegerField(default=0)
+    deleted_count = models.IntegerField(default=0)
+    errors_json = models.JSONField(blank=True, default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"DeletionJob #{self.pk} ({self.status})"
 

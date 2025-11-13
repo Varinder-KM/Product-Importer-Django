@@ -3,6 +3,7 @@ from rest_framework import pagination, viewsets
 
 from .models import Product
 from .serializers import ProductSerializer
+from .views_delete import ProductBulkDeleteView
 
 
 class ProductFilterSet(filters.FilterSet):
@@ -27,4 +28,11 @@ class ProductViewSet(viewsets.ModelViewSet):
     pagination_class = ProductPagination
     filter_backends = [filters.DjangoFilterBackend]
     filterset_class = ProductFilterSet
+
+    def bulk_delete(self, request, *args, **kwargs):
+        view = ProductBulkDeleteView()
+        view.request = request
+        view.args = args
+        view.kwargs = kwargs
+        return view.delete(request, *args, **kwargs)
 

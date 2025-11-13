@@ -8,34 +8,26 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Tuple
 
 import redis
+from asgiref.sync import async_to_sync
 from celery import shared_task
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import connection, transaction
 from django.utils import timezone
 from psycopg2 import sql
-from asgiref.sync import async_to_sync
 
-from .models import UploadJob
+from .models import DeletionJob, Product, UploadJob
 from .utils.csv_batch_loader import CSVBatchLoader
+from .utils.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-_redis_client: Optional[redis.Redis] = None
 _channel_layer = None
 
 ProgressPayload = Dict[str, Optional[object]]
 
 TRUTHY_VALUES = {"1", "true", "yes", "y", "t"}
 MAX_ERROR_RECORDS = 50
-
-
-def _get_redis_client() -> redis.Redis:
-    global _redis_client
-    if _redis_client is None:
-        redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
-        _redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
-    return _redis_client
 
 
 def _get_channel_layer():
@@ -51,7 +43,30 @@ def _calculate_percent(processed: int, total: int) -> int:
     return min(100, int((processed / total) * 100))
 
 
-def _write_progress(
+def _publish_progress(
+    identifier: str,
+    namespace: str,
+    event_type: str,
+    payload: ProgressPayload,
+) -> ProgressPayload:
+    key = f"{namespace}:{identifier}"
+    try:
+        get_redis_client().set(key, json.dumps(payload))
+    except redis.RedisError:
+        logger.exception("Failed to write progress to Redis for %s %s", namespace, identifier)
+    try:
+        channel_layer = _get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"{namespace}_{identifier}",
+                {"type": event_type, "payload": payload},
+            )
+    except Exception:
+        logger.exception("Failed to publish progress via Channels for %s %s", namespace, identifier)
+    return payload
+
+
+def _write_upload_progress(
     task_id: str,
     *,
     status: str,
@@ -69,20 +84,28 @@ def _write_progress(
         "errors": errors,
         "error": error,
     }
-    try:
-        _get_redis_client().set(f"upload:{task_id}", json.dumps(payload))
-    except redis.RedisError:
-        logger.exception("Failed to write progress to Redis for task %s", task_id)
-    try:
-        channel_layer = _get_channel_layer()
-        if channel_layer is not None:
-            async_to_sync(channel_layer.group_send)(
-                f"upload_{task_id}",
-                {"type": "upload.progress", "payload": payload},
-            )
-    except Exception:
-        logger.exception("Failed to publish progress via Channels for task %s", task_id)
-    return payload
+    return _publish_progress(task_id, "upload", "upload.progress", payload)
+
+
+def publish_delete_progress(
+    job_id: int,
+    *,
+    status: str,
+    processed: int,
+    total: int,
+    percent: int,
+    errors: int,
+    error: Optional[str] = None,
+) -> ProgressPayload:
+    payload: ProgressPayload = {
+        "status": status,
+        "processed": processed,
+        "total": total,
+        "percent": percent,
+        "errors": errors,
+        "error": error,
+    }
+    return _publish_progress(str(job_id), "delete", "deletion.progress", payload)
 
 
 def _normalize_row(
@@ -245,7 +268,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
     job = UploadJob.objects.filter(task_id=upload_task_id).first()
     if not job:
         logger.warning("UploadJob with task_id=%s not found.", upload_task_id)
-        _write_progress(
+        _write_upload_progress(
             upload_task_id,
             status="failed",
             processed=0,
@@ -263,7 +286,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
         job.status = UploadJob.Status.FAILED
         job.errors_json = [{"message": error_message}]
         job.save(update_fields=["status", "errors_json", "updated_at"])
-        _write_progress(
+        _write_upload_progress(
             upload_task_id,
             status="failed",
             processed=0,
@@ -295,7 +318,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
         batch_size,
     )
 
-    initial_payload = _write_progress(
+    initial_payload = _write_upload_progress(
         upload_task_id,
         status="in_progress",
         processed=processed_rows,
@@ -326,7 +349,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
             job.save(update_fields=["processed_rows", "errors_json", "updated_at"])
 
             percent = _calculate_percent(processed_rows, total_rows)
-            payload = _write_progress(
+            payload = _write_upload_progress(
                 upload_task_id,
                 status="in_progress",
                 processed=processed_rows,
@@ -341,7 +364,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
         job.errors_json = error_details
         job.save(update_fields=["status", "processed_rows", "errors_json", "updated_at"])
 
-        final_payload = _write_progress(
+        final_payload = _write_upload_progress(
             upload_task_id,
             status="completed",
             processed=processed_rows,
@@ -366,7 +389,7 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
         job.errors_json = error_details[:MAX_ERROR_RECORDS]
         job.save(update_fields=["status", "errors_json", "updated_at"])
 
-        failure_payload = _write_progress(
+        failure_payload = _write_upload_progress(
             upload_task_id,
             status="failed",
             processed=processed_rows,
@@ -376,4 +399,125 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
             error=str(exc),
         )
         self.update_state(state="FAILURE", meta=failure_payload)
+        raise
+
+
+@shared_task(bind=True, name="products.bulk_delete_products_task")
+def bulk_delete_products_task(self, job_id: int, user_id: Optional[int] = None) -> None:
+    """Delete all products in batches (or truncate) and report progress."""
+    logger.info("Starting bulk_delete_products_task job_id=%s user_id=%s", job_id, user_id)
+
+    job = DeletionJob.objects.filter(pk=job_id).first()
+    if not job:
+        logger.warning("DeletionJob with id=%s not found.", job_id)
+        publish_delete_progress(
+            job_id,
+            status="failed",
+            processed=0,
+            total=0,
+            percent=0,
+            errors=1,
+            error="Deletion job not found.",
+        )
+        return
+
+    total = Product.objects.count()
+    job.status = DeletionJob.Status.IN_PROGRESS
+    job.total_count = total
+    job.deleted_count = 0
+    job.errors_json = []
+    job.save(update_fields=["status", "total_count", "deleted_count", "errors_json", "updated_at"])
+
+    if total == 0:
+        payload = _write_delete_progress(
+            job_id,
+            status="completed",
+            processed=0,
+            total=0,
+            percent=100,
+            errors=0,
+        )
+        job.status = DeletionJob.Status.COMPLETED
+        job.save(update_fields=["status", "updated_at"])
+        self.update_state(state="SUCCESS", meta=payload)
+        return
+
+    batch_size = getattr(settings, "PRODUCT_DELETE_BATCH_SIZE", 1000)
+    truncate_threshold = getattr(settings, "PRODUCT_DELETE_TRUNCATE_THRESHOLD", 200000)
+    deleted_count = 0
+    errors = 0
+
+    payload = publish_delete_progress(
+        job_id,
+        status="in_progress",
+        processed=deleted_count,
+        total=total,
+        percent=_calculate_percent(deleted_count, total),
+        errors=errors,
+    )
+    self.update_state(state="PROGRESS", meta=payload)
+
+    try:
+        if total >= truncate_threshold:
+            logger.info("Truncating products_product table (total=%s exceeds threshold=%s).", total, truncate_threshold)
+            with connection.cursor() as cursor:
+                cursor.execute("TRUNCATE TABLE products_product RESTART IDENTITY CASCADE;")
+            deleted_count = total
+        else:
+            logger.info(
+                "Deleting products in batches of %s (total=%s, threshold=%s).",
+                batch_size,
+                total,
+                truncate_threshold,
+            )
+            while True:
+                ids = list(Product.objects.values_list("pk", flat=True)[:batch_size])
+                if not ids:
+                    break
+                deleted_batch, _ = Product.objects.filter(pk__in=ids).delete()
+                deleted_count += deleted_batch
+                job.deleted_count = deleted_count
+                job.save(update_fields=["deleted_count", "updated_at"])
+
+            payload = publish_delete_progress(
+                    job_id,
+                    status="in_progress",
+                    processed=deleted_count,
+                    total=total,
+                    percent=_calculate_percent(deleted_count, total),
+                    errors=errors,
+                )
+                self.update_state(state="PROGRESS", meta=payload)
+
+        job.status = DeletionJob.Status.COMPLETED
+        job.deleted_count = deleted_count
+        job.save(update_fields=["status", "deleted_count", "updated_at"])
+
+        payload = publish_delete_progress(
+            job_id,
+            status="completed",
+            processed=deleted_count,
+            total=total,
+            percent=100,
+            errors=errors,
+        )
+        self.update_state(state="SUCCESS", meta=payload)
+        logger.info("Completed bulk_delete_products_task job_id=%s", job_id)
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Failed to bulk delete products job_id=%s", job_id)
+        errors += 1
+        job.status = DeletionJob.Status.FAILED
+        job.errors_json = [{"message": str(exc), "stacktrace": traceback.format_exc()}]
+        job.save(update_fields=["status", "errors_json", "updated_at"])
+
+        payload = publish_delete_progress(
+            job_id,
+            status="failed",
+            processed=deleted_count,
+            total=total,
+            percent=_calculate_percent(deleted_count, total),
+            errors=errors,
+            error=str(exc),
+        )
+        self.update_state(state="FAILURE", meta=payload)
         raise

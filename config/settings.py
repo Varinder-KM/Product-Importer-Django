@@ -14,6 +14,10 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-me")
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes"}
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PRODUCT_IMPORT_BATCH_SIZE = int(os.getenv("PRODUCT_IMPORT_BATCH_SIZE", "5000"))
+PRODUCT_BULK_DELETE_THRESHOLD = int(os.getenv("PRODUCT_BULK_DELETE_THRESHOLD", "10000"))
+PRODUCT_DELETE_BATCH_SIZE = int(os.getenv("PRODUCT_DELETE_BATCH_SIZE", "1000"))
+PRODUCT_DELETE_TRUNCATE_THRESHOLD = int(os.getenv("PRODUCT_DELETE_TRUNCATE_THRESHOLD", "200000"))
+PRODUCT_DELETE_CONFIRM_PHRASE = os.getenv("PRODUCT_DELETE_CONFIRM_PHRASE", "DELETE ALL PRODUCTS")
 
 allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = (
