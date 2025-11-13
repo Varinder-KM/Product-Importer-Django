@@ -7,6 +7,7 @@ from products.views_upload import UploadPageView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("products.urls")),
+    path("api/", include("webhooks.urls")),
     path("upload/", UploadPageView.as_view(), name="upload-page"),
 ]
 

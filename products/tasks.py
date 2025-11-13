@@ -16,6 +16,9 @@ from django.db import connection, transaction
 from django.utils import timezone
 from psycopg2 import sql
 
+from webhooks.models import Webhook
+from webhooks.tasks import queue_event
+
 from .models import DeletionJob, Product, UploadJob
 from .utils.csv_batch_loader import CSVBatchLoader
 from .utils.redis_client import get_redis_client
@@ -358,6 +361,18 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
                 errors=error_count,
             )
             self.update_state(state="PROGRESS", meta=payload)
+            queue_event(
+                Webhook.EVENT_IMPORT_PROGRESS,
+                {
+                    "event": Webhook.EVENT_IMPORT_PROGRESS,
+                    "task_id": upload_task_id,
+                    "batch_index": batch_index,
+                    "processed": processed_rows,
+                    "total": total_rows,
+                    "errors": error_count,
+                    "timestamp": timezone.now().isoformat(),
+                },
+            )
 
         job.status = UploadJob.Status.COMPLETED
         job.processed_rows = processed_rows
@@ -373,6 +388,18 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
             errors=error_count,
         )
         self.update_state(state="SUCCESS", meta=final_payload)
+        queue_event(
+            Webhook.EVENT_IMPORT_COMPLETED,
+            {
+                "event": Webhook.EVENT_IMPORT_COMPLETED,
+                "task_id": upload_task_id,
+                "total": total_rows,
+                "processed": processed_rows,
+                "errors": error_count,
+                "status": "completed",
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
         logger.info("Completed import_csv_task task_id=%s", upload_task_id)
     except Exception as exc:  # pragma: no cover
         logger.exception("Failed to process upload %s", upload_task_id)
@@ -399,6 +426,19 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
             error=str(exc),
         )
         self.update_state(state="FAILURE", meta=failure_payload)
+        queue_event(
+            Webhook.EVENT_IMPORT_COMPLETED,
+            {
+                "event": Webhook.EVENT_IMPORT_COMPLETED,
+                "task_id": upload_task_id,
+                "total": total_rows,
+                "processed": processed_rows,
+                "errors": error_count,
+                "status": "failed",
+                "error": str(exc),
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
         raise
 
 

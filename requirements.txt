@@ -10,6 +10,7 @@ gunicorn
 python-dotenv
 dj-database-url
 django-filter
+requests
 pytest
 pytest-django
 ruff

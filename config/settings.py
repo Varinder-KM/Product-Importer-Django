@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "django_celery_results",
     "django_filters",
     "channels",
+    "webhooks.apps.WebhooksConfig",
     "products.apps.ProductsConfig",
 ]
 

@@ -154,6 +154,25 @@ PRODUCT_DELETE_CONFIRM_PHRASE="DELETE ALL PRODUCTS"
 
 For counts below the threshold, deletion happens synchronously. Above it, a Celery task runs in the background; progress is broadcast over WebSockets (with Redis) and can be monitored on the upload page or via `GET /api/products/deletion/<job_id>/progress/`.
 
+### Webhooks
+
+Create webhooks via the API (`POST /api/webhooks/`). Supported `event_type` values include:
+
+- `product.created`
+- `product.updated`
+- `product.deleted`
+- `product.import_progress`
+- `product.import_completed`
+- `webhook.test`
+
+Use the test endpoint to verify connectivity:
+
+```
+http POST :8000/api/webhooks/<id>/test/
+```
+
+Successful deliveries record status code and latency on the webhook and individual delivery records. Import completion and progress events emit automatically from the CSV importer.
+
 Optional beat scheduler:
 
 ```bash
