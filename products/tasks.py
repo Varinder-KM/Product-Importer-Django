@@ -9,10 +9,12 @@ from typing import Dict, List, Optional, Tuple
 
 import redis
 from celery import shared_task
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import connection, transaction
 from django.utils import timezone
 from psycopg2 import sql
+from asgiref.sync import async_to_sync
 
 from .models import UploadJob
 from .utils.csv_batch_loader import CSVBatchLoader
@@ -20,6 +22,7 @@ from .utils.csv_batch_loader import CSVBatchLoader
 logger = logging.getLogger(__name__)
 
 _redis_client: Optional[redis.Redis] = None
+_channel_layer = None
 
 ProgressPayload = Dict[str, Optional[object]]
 
@@ -33,6 +36,13 @@ def _get_redis_client() -> redis.Redis:
         redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
         _redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
     return _redis_client
+
+
+def _get_channel_layer():
+    global _channel_layer
+    if _channel_layer is None:
+        _channel_layer = get_channel_layer()
+    return _channel_layer
 
 
 def _calculate_percent(processed: int, total: int) -> int:
@@ -63,6 +73,15 @@ def _write_progress(
         _get_redis_client().set(f"upload:{task_id}", json.dumps(payload))
     except redis.RedisError:
         logger.exception("Failed to write progress to Redis for task %s", task_id)
+    try:
+        channel_layer = _get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"upload_{task_id}",
+                {"type": "upload.progress", "payload": payload},
+            )
+    except Exception:
+        logger.exception("Failed to publish progress via Channels for task %s", task_id)
     return payload
 
 
@@ -190,7 +209,7 @@ def _copy_batch_to_database(
                         created_at,
                         updated_at
                     FROM {temp_table}
-                    ON CONFLICT ON CONSTRAINT product_lower_sku_unique
+                    ON CONFLICT ((lower(sku)))
                     DO UPDATE SET
                         name = EXCLUDED.name,
                         description = EXCLUDED.description,

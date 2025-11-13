@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Product CSV Upload</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; max-width: 720px; }
+        h1 { font-size: 1.8rem; }
+        form { margin-bottom: 2rem; }
+        #progress-container { display: none; margin-top: 1.5rem; }
+        #progress-bar { width: 100%; height: 24px; border: 1px solid #888; border-radius: 4px; overflow: hidden; }
+        #progress-bar-fill { width: 0; height: 100%; background: #2b7fff; transition: width 0.3s ease; }
+        #status { margin-top: 0.5rem; font-weight: 500; }
+        #errors { margin-top: 1rem; color: #b00020; white-space: pre-wrap; }
+        button { padding: 0.5rem 1rem; font-size: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>Upload Products CSV</h1>
+    <form id="upload-form">
+        {% csrf_token %}
+        <label for="file">Choose CSV file (required)</label><br>
+        <input type="file" id="file" name="file" accept=".csv" required>
+        <div style="margin-top: 1rem;">
+            <button type="submit">Start Upload</button>
+        </div>
+    </form>
+
+    <section id="progress-container">
+        <h2>Progress</h2>
+        <div id="progress-bar">
+            <div id="progress-bar-fill"></div>
+        </div>
+        <div id="status">Waiting to start...</div>
+        <div id="errors"></div>
+    </section>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+        const statusText = document.getElementById('status');
+        const errorsEl = document.getElementById('errors');
+        let pollingInterval = null;
+        let socket = null;
+
+        function getCookie(name) {
+            const value = ; ;
+            const parts = value.split(; =);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        function updateProgress(payload) {
+            if (!payload) {
+                return;
+            }
+            const percent = payload.percent ?? 0;
+            progressBarFill.style.width = ${percent}%;
+            statusText.textContent = ${payload.status || 'unknown'} • % (/ processed);
+            if (payload.errors && payload.errors > 0) {
+                statusText.textContent +=  •  errors;
+            }
+            if (payload.error) {
+                errorsEl.textContent = payload.error;
+            }
+        }
+
+        async function pollProgress(taskId) {
+            try {
+                const response = await fetch(/api/uploads//progress/, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    return;
+                }
+                const data = await response.json();
+                updateProgress(data.progress);
+            } catch (err) {
+                console.error('Progress polling failed', err);
+            }
+        }
+
+        function startPolling(taskId) {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            pollProgress(taskId);
+            pollingInterval = setInterval(() => pollProgress(taskId), 3000);
+        }
+
+        function startWebSocket(taskId) {
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsUrl = ${protocol}:///ws/uploads//;
+            socket = new WebSocket(wsUrl);
+            socket.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    updateProgress(payload);
+                    if (payload.status === 'completed' || payload.status === 'failed') {
+                        if (pollingInterval) {
+                            clearInterval(pollingInterval);
+                        }
+                        socket.close();
+                    }
+                } catch (err) {
+                    console.error('Invalid WS payload', err);
+                }
+            };
+            socket.onerror = () => {
+                console.warn('WebSocket error, falling back to polling');
+                startPolling(taskId);
+            };
+            socket.onclose = () => {
+                if (!pollingInterval) {
+                    startPolling(taskId);
+                }
+            };
+        }
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const fileInput = document.getElementById('file');
+            if (!fileInput.files.length) {
+                alert('Please choose a CSV file.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            progressContainer.style.display = 'block';
+            progressBarFill.style.width = '0%';
+            statusText.textContent = 'Uploading...';
+            errorsEl.textContent = '';
+
+            try {
+                const response = await fetch('/api/uploads/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: formData,
+                    credentials: 'same-origin',
+                });
+
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+                    throw new Error(error.detail || 'Upload failed');
+                }
+
+                const data = await response.json();
+                const taskId = data.task_id;
+                statusText.textContent = Upload queued. Task ID: ;
+
+                if ('WebSocket' in window) {
+                    startWebSocket(taskId);
+                } else {
+                    startPolling(taskId);
+                }
+            } catch (err) {
+                console.error(err);
+                statusText.textContent = 'Upload failed.';
+                errorsEl.textContent = err.message;
+            }
+        });
+    </script>
+</body>
+</html>

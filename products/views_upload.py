@@ -1,6 +1,10 @@
+import json
 from pathlib import Path
+from typing import Optional
 
+import redis
 from django.conf import settings
+from django.views.generic import TemplateView
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -8,6 +12,15 @@ from rest_framework.views import APIView
 
 from .models import UploadJob
 from .tasks import import_csv_task
+
+
+def _get_redis_client() -> redis.Redis:
+    redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
+    return redis.Redis.from_url(redis_url, decode_responses=True)
+
+
+class UploadPageView(TemplateView):
+    template_name = "upload.html"
 
 
 class UploadCSVView(APIView):
@@ -67,3 +80,24 @@ class UploadCSVView(APIView):
 
         return Response({"task_id": upload_job_id, "job_id": job.id}, status=status.HTTP_202_ACCEPTED)
 
+
+class UploadProgressView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, task_id: str, *args, **kwargs):
+        try:
+            data: Optional[str] = _get_redis_client().get(f"upload:{task_id}")
+        except redis.RedisError:
+            return Response(
+                {"task_id": task_id, "progress": None, "detail": "Unable to read progress."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if not data:
+            return Response({"task_id": task_id, "progress": None}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            payload = None
+        return Response({"task_id": task_id, "progress": payload})

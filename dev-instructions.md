@@ -120,6 +120,17 @@ celery -A config worker --loglevel=info
 ./scripts/run_celery_worker.sh
 ```
 
+### ASGI server (WebSockets)
+
+For Channels/WebSocket support, run an ASGI server instead of `runserver`:
+
+```bash
+# Option 1
+daphne config.asgi:application
+# Option 2 (auto-reload)
+uvicorn config.asgi:application --reload
+```
+
 ### CSV import tuning
 
 The importer streams CSV rows in batches (default `5,000`). Tweak `PRODUCT_IMPORT_BATCH_SIZE` in `.env` to balance throughput and memory:
