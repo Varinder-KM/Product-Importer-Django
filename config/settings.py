@@ -12,7 +12,7 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-me")
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes"}
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672//")
 PRODUCT_IMPORT_BATCH_SIZE = int(os.getenv("PRODUCT_IMPORT_BATCH_SIZE", "5000"))
 PRODUCT_BULK_DELETE_THRESHOLD = int(os.getenv("PRODUCT_BULK_DELETE_THRESHOLD", "10000"))
 PRODUCT_DELETE_BATCH_SIZE = int(os.getenv("PRODUCT_DELETE_BATCH_SIZE", "1000"))
@@ -117,8 +117,8 @@ REST_FRAMEWORK = {
     ],
 }
 
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_BROKER_URL = RABBITMQ_URL
+CELERY_RESULT_BACKEND = "django-db"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -127,9 +127,9 @@ CELERY_TASK_TRACK_STARTED = True
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "BACKEND": "channels_rabbitmq.core.RabbitmqChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_URL],
+            "host": RABBITMQ_URL,
         },
     },
 }

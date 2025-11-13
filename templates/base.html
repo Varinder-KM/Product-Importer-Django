@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Product Importer{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #dc2626;
+            --danger-hover: #b91c1c;
+            --bg: #f6f6f6;
+            --text: #1a1a1a;
+            --text-muted: #666666;
+            --card: #ffffff;
+            --border: #e0e0e0;
+            --nav-bg: #ffffff;
+            --nav-border: #e5e7eb;
+        }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .navbar {
+            background: var(--nav-bg);
+            border-bottom: 1px solid var(--nav-border);
+            padding: 0 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+        .nav-brand {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .nav-brand:hover {
+            color: var(--primary);
+        }
+        .nav-links {
+            display: flex;
+            gap: 0.5rem;
+            list-style: none;
+        }
+        .nav-links a {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            color: var(--text);
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .nav-links a:hover {
+            background: var(--bg);
+            color: var(--primary);
+        }
+        .nav-links a.active {
+            background: var(--primary);
+            color: white;
+        }
+        .nav-links a.active:hover {
+            background: var(--primary-hover);
+            color: white;
+        }
+        .content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 0 1rem;
+            }
+            .nav-container {
+                flex-direction: column;
+                height: auto;
+                padding: 1rem 0;
+                gap: 1rem;
+            }
+            .nav-links {
+                width: 100%;
+                justify-content: center;
+            }
+            .nav-links a {
+                flex: 1;
+                justify-content: center;
+            }
+            .content {
+                padding: 1rem;
+            }
+        }
+        {% block extra_css %}{% endblock %}
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{% url 'products-ui' %}" class="nav-brand">
+                <span>📦</span>
+                <span>Product Importer</span>
+            </a>
+            <ul class="nav-links">
+                <li>
+                    <a href="{% url 'products-ui' %}" class="{% if request.resolver_match.url_name == 'products-ui' %}active{% endif %}">
+                        Products
+                    </a>
+                </li>
+                <li>
+                    <a href="{% url 'upload-page' %}" class="{% if request.resolver_match.url_name == 'upload-page' %}active{% endif %}">
+                        Upload
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+

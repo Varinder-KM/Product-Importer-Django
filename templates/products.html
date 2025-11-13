@@ -1,0 +1,606 @@
+{% extends "base.html" %}
+{% block title %}Products - Product Importer{% endblock %}
+{% block extra_css %}
+<style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f6f6f6;
+            --text: #1a1a1a;
+            --card: #ffffff;
+            --border: #e0e0e0;
+            --accent: #2563eb;
+            --danger: #dc2626;
+            --muted: #666666;
+        }
+        header {
+            margin-bottom: 1.5rem;
+        }
+        h1 {
+            margin: 0 0 1rem;
+            font-size: 1.75rem;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+        }
+        form.filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.85rem;
+            gap: 0.35rem;
+        }
+        input[type="text"], select {
+            padding: 0.5rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        thead {
+            background: #f1f5f9;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        th {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+        }
+        tbody tr:hover {
+            background: rgba(37, 99, 235, 0.05);
+        }
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        button, .btn {
+            border: none;
+            border-radius: 6px;
+            padding: 0.5rem 0.9rem;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .btn-primary {
+            background: #1d4ed8;
+            color: white;
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .pagination {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+        }
+        .pagination button {
+            padding: 0.3rem 0.75rem;
+            font-size: 0.85rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-active { background: rgba(34, 197, 94, 0.1); color: #166534; }
+        .badge-inactive { background: rgba(248, 113, 113, 0.12); color: #b91c1c; }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.35);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-backdrop.show { display: flex; }
+        .modal {
+            width: min(460px, 92vw);
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+        }
+        .modal h2 {
+            margin: 0 0 1rem;
+            font-size: 1.35rem;
+        }
+        .modal form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        textarea, input[type="number"] {
+            padding: 0.5rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+        textarea { min-height: 90px; resize: vertical; }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+        .toast-container {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            z-index: 1200;
+            display: grid;
+            gap: 0.6rem;
+        }
+        .toast {
+            background: #0f172a;
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            min-width: 220px;
+            box-shadow: 0 15px 30px rgba(15, 23, 42, 0.3);
+            animation: fade-in 0.2s ease;
+        }
+        .toast.success { background: #15803d; }
+        .toast.error { background: #b91c1c; }
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (max-width: 768px) {
+            .toolbar { flex-direction: column; align-items: stretch; }
+            form.filters { grid-template-columns: 1fr; }
+        }
+    </style>
+{% endblock %}
+{% block content %}
+    <header>
+        <h1>Products</h1>
+        <p style="color: var(--muted); max-width: 640px;">Manage products, filter, paginate, and perform quick edits. Data syncs with the backend via the REST API.</p>
+    </header>
+        <div class="card">
+            <div class="toolbar">
+                <form class="filters" id="filter-form">
+                    <label>
+                        SKU
+                        <input type="text" id="filter-sku" name="sku" placeholder="Search SKU">
+                    </label>
+                    <label>
+                        Name
+                        <input type="text" id="filter-name" name="name" placeholder="Search name">
+                    </label>
+                    <label>
+                        Active
+                        <select id="filter-active" name="active">
+                            <option value="">Any</option>
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </select>
+                    </label>
+                </form>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <button class="btn btn-secondary" id="clear-filters">Clear</button>
+                    <button class="btn btn-primary" id="new-product">New Product</button>
+                    <button class="btn btn-danger" id="bulk-delete" disabled>Delete Selected</button>
+                </div>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table id="products-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all"></th>
+                            <th>SKU</th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Price</th>
+                            <th>Active</th>
+                            <th>Updated</th>
+                            <th style="width: 130px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--muted);">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination">
+                <div id="pagination-info"></div>
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="btn btn-secondary" id="prev-page">Prev</button>
+                    <button class="btn btn-secondary" id="next-page">Next</button>
+                </div>
+            </div>
+        </div>
+
+    <div class="modal-backdrop" id="product-modal">
+        <div class="modal">
+            <h2 id="modal-title">New Product</h2>
+            <form id="product-form">
+                <label>
+                    SKU
+                    <input type="text" id="product-sku" name="sku" required maxlength="255">
+                </label>
+                <label>
+                    Name
+                    <input type="text" id="product-name" name="name" required maxlength="255">
+                </label>
+                <label>
+                    Description
+                    <textarea id="product-description" name="description" placeholder="Optional"></textarea>
+                </label>
+                <label>
+                    Price
+                    <input type="number" id="product-price" name="price" min="0" step="0.01" required>
+                </label>
+                <label style="flex-direction:row; align-items:center; gap:0.5rem;">
+                    <input type="checkbox" id="product-active" name="active" checked>
+                    Active
+                </label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="modal-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="modal-submit">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+{% endblock %}
+{% block extra_js %}
+    <script>
+        const state = {
+            page: 1,
+            pageSize: 50,
+            count: 0,
+            filters: {
+                sku: '',
+                name: '',
+                active: ''
+            },
+            selected: new Set(),
+            currentEditId: null,
+        };
+
+        const elements = {
+            filterForm: document.getElementById('filter-form'),
+            filterSku: document.getElementById('filter-sku'),
+            filterName: document.getElementById('filter-name'),
+            filterActive: document.getElementById('filter-active'),
+            clearFilters: document.getElementById('clear-filters'),
+            newProduct: document.getElementById('new-product'),
+            bulkDelete: document.getElementById('bulk-delete'),
+            tableBody: document.querySelector('#products-table tbody'),
+            paginationInfo: document.getElementById('pagination-info'),
+            prevPage: document.getElementById('prev-page'),
+            nextPage: document.getElementById('next-page'),
+            selectAll: document.getElementById('select-all'),
+            modalBackdrop: document.getElementById('product-modal'),
+            modalTitle: document.getElementById('modal-title'),
+            modalForm: document.getElementById('product-form'),
+            modalSubmit: document.getElementById('modal-submit'),
+            modalCancel: document.getElementById('modal-cancel'),
+            toastContainer: document.getElementById('toast-container'),
+            skuInput: document.getElementById('product-sku'),
+            nameInput: document.getElementById('product-name'),
+            descriptionInput: document.getElementById('product-description'),
+            priceInput: document.getElementById('product-price'),
+            activeInput: document.getElementById('product-active'),
+        };
+
+        const deleteConfirmPhrase = "{{ delete_confirm_phrase|escapejs }}";
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            elements.toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 200);
+            }, 3000);
+        }
+
+        function buildQuery() {
+            const params = new URLSearchParams();
+            params.set('page', state.page);
+            if (state.filters.sku) params.set('sku', state.filters.sku);
+            if (state.filters.name) params.set('name', state.filters.name);
+            if (state.filters.active) params.set('active', state.filters.active);
+            params.set('ordering', '-created_at');
+            return params.toString();
+        }
+
+        async function fetchProducts() {
+            try {
+                elements.tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--muted);">Loading...</td></tr>';
+                const response = await fetch(`/api/products/?${buildQuery()}`, { credentials: 'same-origin' });
+                if (!response.ok) throw new Error('Failed to load products');
+                const data = await response.json();
+                state.count = data.count;
+                renderTable(data.results || []);
+                updatePagination(data);
+            } catch (err) {
+                console.error(err);
+                elements.tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem; color:#b91c1c;">Failed to load products.</td></tr>';
+            }
+        }
+
+        function formatDate(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+        }
+
+        function renderTable(products) {
+            if (!products.length) {
+                elements.tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--muted);">No products found.</td></tr>';
+                return;
+            }
+            const rows = products.map(product => {
+                const checked = state.selected.has(product.id) ? 'checked' : '';
+                return `
+                    <tr data-id="${product.id}">
+                        <td><input type="checkbox" class="row-select" data-id="${product.id}" ${checked}></td>
+                        <td>${product.sku || ''}</td>
+                        <td>${product.name || ''}</td>
+                        <td>${(product.description || '').substring(0, 50)}${product.description && product.description.length > 50 ? '...' : ''}</td>
+                        <td>$${product.price || '0.00'}</td>
+                        <td>
+                            <span class="badge ${product.active ? 'badge-active' : 'badge-inactive'}">
+                                ${product.active ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td>${formatDate(product.updated_at)}</td>
+                        <td>
+                            <div class="actions">
+                                <button class="btn btn-secondary" data-action="edit" data-id="${product.id}">Edit</button>
+                                <button class="btn btn-danger" data-action="delete" data-id="${product.id}">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            elements.tableBody.innerHTML = rows.join('');
+            updateSelectedControls();
+        }
+
+        function updatePagination(data) {
+            const start = state.count === 0 ? 0 : (state.page - 1) * state.pageSize + 1;
+            const end = Math.min(state.page * state.pageSize, state.count);
+            elements.paginationInfo.textContent = `Showing ${start}-${end} of ${state.count}`;
+            elements.prevPage.disabled = !data.previous;
+            elements.nextPage.disabled = !data.next;
+        }
+
+        function openModal(title) {
+            elements.modalTitle.textContent = title;
+            elements.modalBackdrop.classList.add('show');
+        }
+
+        function closeModal() {
+            elements.modalBackdrop.classList.remove('show');
+            elements.modalForm.reset();
+            elements.activeInput.checked = true;
+            state.currentEditId = null;
+        }
+
+        async function loadProduct(id) {
+            const response = await fetch(`/api/products/${id}/`, { credentials: 'same-origin' });
+            if (!response.ok) throw new Error('Failed to load product');
+            return response.json();
+        }
+
+        async function handleSubmit(event) {
+            event.preventDefault();
+            const payload = {
+                sku: elements.skuInput.value.trim(),
+                name: elements.nameInput.value.trim(),
+                description: elements.descriptionInput.value.trim(),
+                price: elements.priceInput.value || '0',
+                active: elements.activeInput.checked,
+            };
+            const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+            const isEdit = Boolean(state.currentEditId);
+            const url = isEdit ? `/api/products/${state.currentEditId}/` : '/api/products/';
+            const method = isEdit ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.detail || 'Failed to save product');
+                }
+                showToast(`Product ${isEdit ? 'updated' : 'created'} successfully.`);
+                closeModal();
+                await fetchProducts();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message, 'error');
+            }
+        }
+
+        async function handleDelete(id) {
+            if (!confirm('Delete this product?')) return;
+            const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+            try {
+                const response = await fetch(`/api/products/${id}/`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRFToken': csrftoken },
+                });
+                if (!response.ok) throw new Error('Failed to delete product');
+                state.selected.delete(id);
+                showToast('Product deleted.');
+                await fetchProducts();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message, 'error');
+            }
+        }
+
+        async function handleBulkDelete() {
+            if (!state.selected.size) return;
+            if (!confirm(`Delete ${state.selected.size} selected product(s)?`)) return;
+            for (const id of Array.from(state.selected)) {
+                await handleDelete(id);
+            }
+            state.selected.clear();
+            updateSelectedControls();
+        }
+
+        function updateSelectedControls() {
+            elements.bulkDelete.disabled = state.selected.size === 0;
+            elements.selectAll.checked = state.selected.size > 0 && state.selected.size === document.querySelectorAll('.row-select').length;
+        }
+
+        elements.filterForm.addEventListener('input', () => {
+            state.filters.sku = elements.filterSku.value.trim();
+            state.filters.name = elements.filterName.value.trim();
+            state.filters.active = elements.filterActive.value;
+            state.page = 1;
+            fetchProducts();
+        });
+
+        elements.clearFilters.addEventListener('click', (event) => {
+            event.preventDefault();
+            elements.filterSku.value = '';
+            elements.filterName.value = '';
+            elements.filterActive.value = '';
+            state.filters = { sku: '', name: '', active: '' };
+            state.page = 1;
+            fetchProducts();
+        });
+
+        elements.prevPage.addEventListener('click', () => {
+            if (state.page > 1) {
+                state.page -= 1;
+                fetchProducts();
+            }
+        });
+
+        elements.nextPage.addEventListener('click', () => {
+            state.page += 1;
+            fetchProducts();
+        });
+
+        elements.tableBody.addEventListener('click', async (event) => {
+            const action = event.target.getAttribute('data-action');
+            const id = event.target.getAttribute('data-id');
+            if (!action || !id) return;
+
+            if (action === 'edit') {
+                try {
+                    const product = await loadProduct(id);
+                    state.currentEditId = product.id;
+                    elements.skuInput.value = product.sku;
+                    elements.nameInput.value = product.name;
+                    elements.descriptionInput.value = product.description || '';
+                    elements.priceInput.value = product.price;
+                    elements.activeInput.checked = product.active;
+                    openModal('Edit Product');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Failed to load product.', 'error');
+                }
+            }
+
+            if (action === 'delete') {
+                await handleDelete(id);
+            }
+        });
+
+        elements.tableBody.addEventListener('change', (event) => {
+            if (event.target.classList.contains('row-select')) {
+                const id = Number(event.target.getAttribute('data-id'));
+                if (event.target.checked) {
+                    state.selected.add(id);
+                } else {
+                    state.selected.delete(id);
+                }
+                updateSelectedControls();
+            }
+        });
+
+        elements.selectAll.addEventListener('change', (event) => {
+            const checkboxes = document.querySelectorAll('.row-select');
+            state.selected.clear();
+            checkboxes.forEach(cb => {
+                cb.checked = event.target.checked;
+                if (event.target.checked) {
+                    state.selected.add(Number(cb.getAttribute('data-id')));
+                }
+            });
+            updateSelectedControls();
+        });
+
+        elements.newProduct.addEventListener('click', () => {
+            state.currentEditId = null;
+            elements.modalForm.reset();
+            elements.activeInput.checked = true;
+            openModal('New Product');
+        });
+
+        elements.bulkDelete.addEventListener('click', handleBulkDelete);
+        elements.modalCancel.addEventListener('click', closeModal);
+        elements.modalBackdrop.addEventListener('click', (event) => {
+            if (event.target === elements.modalBackdrop) {
+                closeModal();
+            }
+        });
+        elements.modalForm.addEventListener('submit', handleSubmit);
+
+        fetchProducts();
+    </script>
+{% endblock %}

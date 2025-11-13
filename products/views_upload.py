@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -11,11 +10,27 @@ from rest_framework.views import APIView
 
 from .models import UploadJob
 from .tasks import import_csv_task
-from .utils.redis_client import get_redis_client
+
+
+def _calculate_percent(processed: int, total: int) -> int:
+    if total <= 0:
+        return 100 if processed > 0 else 0
+    return min(100, int((processed / total) * 100))
 
 
 class UploadPageView(TemplateView):
     template_name = "upload.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["delete_confirm_phrase"] = getattr(
+            settings, "PRODUCT_DELETE_CONFIRM_PHRASE", "DELETE ALL PRODUCTS"
+        )
+        return context
+
+
+class ProductManagementView(TemplateView):
+    template_name = "products.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -87,19 +102,27 @@ class UploadProgressView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, task_id: str, *args, **kwargs):
-        try:
-            data: Optional[str] = get_redis_client().get(f"upload:{task_id}")
-        except redis.RedisError:
-            return Response(
-                {"task_id": task_id, "progress": None, "detail": "Unable to read progress."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        if not data:
+        job = UploadJob.objects.filter(task_id=task_id).first()
+        if not job:
             return Response({"task_id": task_id, "progress": None}, status=status.HTTP_404_NOT_FOUND)
 
-        try:
-            payload = json.loads(data)
-        except json.JSONDecodeError:
-            payload = None
+        total = job.total_rows or 0
+        processed = job.processed_rows or 0
+        percent = _calculate_percent(processed, total)
+
+        errors = job.errors_json or []
+        error_message: Optional[str] = None
+        if errors:
+            first_error = errors[0]
+            if isinstance(first_error, dict):
+                error_message = first_error.get("error") or first_error.get("message")
+
+        payload = {
+            "status": job.status,
+            "processed": processed,
+            "total": total,
+            "percent": percent,
+            "errors": len(errors),
+            "error": error_message,
+        }
         return Response({"task_id": task_id, "progress": payload})

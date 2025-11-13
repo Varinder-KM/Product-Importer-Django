@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 from django.conf import settings
@@ -8,7 +7,6 @@ from rest_framework.views import APIView
 
 from .models import DeletionJob, Product
 from .tasks import bulk_delete_products_task, publish_delete_progress
-from .utils.redis_client import get_redis_client
 
 
 class ProductBulkDeleteView(APIView):
@@ -74,31 +72,31 @@ class DeletionProgressView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, job_id: int, *args, **kwargs):
-        key = f"delete:{job_id}"
-        try:
-            data: Optional[str] = get_redis_client().get(key)
-        except Exception:
-            return Response(
-                {"job_id": job_id, "progress": None, "detail": "Unable to read progress."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+        job = DeletionJob.objects.filter(pk=job_id).first()
+        if not job:
+            return Response({"job_id": job_id, "progress": None}, status=status.HTTP_404_NOT_FOUND)
 
-        if not data:
-            job = DeletionJob.objects.filter(pk=job_id).first()
-            if not job:
-                return Response({"job_id": job_id, "progress": None}, status=status.HTTP_404_NOT_FOUND)
-            payload = {
-                "status": job.status,
-                "processed": job.deleted_count,
-                "total": job.total_count,
-                "percent": 100 if job.status == DeletionJob.Status.COMPLETED else 0,
-                "errors": len(job.errors_json or []),
-            }
-            return Response({"job_id": job_id, "progress": payload})
+        total = job.total_count or 0
+        processed = job.deleted_count or 0
+        if total <= 0:
+            percent = 100 if processed > 0 else 0
+        else:
+            percent = min(100, int((processed / total) * 100))
 
-        try:
-            payload = json.loads(data)
-        except json.JSONDecodeError:
-            payload = None
+        errors = job.errors_json or []
+        error_message: Optional[str] = None
+        if errors:
+            first_error = errors[0]
+            if isinstance(first_error, dict):
+                error_message = first_error.get("error") or first_error.get("message")
+
+        payload = {
+            "status": job.status,
+            "processed": processed,
+            "total": total,
+            "percent": percent,
+            "errors": len(errors),
+            "error": error_message,
+        }
         return Response({"job_id": job_id, "progress": payload})
 

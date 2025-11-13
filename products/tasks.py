@@ -1,5 +1,4 @@
 import csv
-import json
 import logging
 import traceback
 from decimal import Decimal, InvalidOperation
@@ -7,7 +6,6 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Tuple
 
-import redis
 from asgiref.sync import async_to_sync
 from celery import shared_task
 from channels.layers import get_channel_layer
@@ -21,8 +19,6 @@ from webhooks.tasks import queue_event
 
 from .models import DeletionJob, Product, UploadJob
 from .utils.csv_batch_loader import CSVBatchLoader
-from .utils.redis_client import get_redis_client
-
 logger = logging.getLogger(__name__)
 
 _channel_layer = None
@@ -52,11 +48,6 @@ def _publish_progress(
     event_type: str,
     payload: ProgressPayload,
 ) -> ProgressPayload:
-    key = f"{namespace}:{identifier}"
-    try:
-        get_redis_client().set(key, json.dumps(payload))
-    except redis.RedisError:
-        logger.exception("Failed to write progress to Redis for %s %s", namespace, identifier)
     try:
         channel_layer = _get_channel_layer()
         if channel_layer is not None:
@@ -161,11 +152,12 @@ def _copy_batch_to_database(
     if not batch_rows:
         return
 
+    quoted_temp_table = connection.ops.quote_name(temp_table_name)
+
     with transaction.atomic():
         with connection.cursor() as cursor:
-            create_temp_sql = sql.SQL(
-                """
-                CREATE TEMP TABLE {temp_table} (
+            create_temp_sql = f"""
+                CREATE TEMP TABLE {quoted_temp_table} (
                     sku TEXT,
                     sku_lower TEXT,
                     name TEXT,
@@ -175,8 +167,7 @@ def _copy_batch_to_database(
                     created_at TIMESTAMPTZ,
                     updated_at TIMESTAMPTZ
                 ) ON COMMIT DROP;
-                """
-            ).format(temp_table=sql.Identifier(temp_table_name))
+            """
             cursor.execute(create_temp_sql)
 
             tmp_path: Optional[Path] = None
@@ -215,16 +206,13 @@ def _copy_batch_to_database(
                 if tmp_path is None:
                     raise RuntimeError("Temporary file path was not created for batch load.")
                 with tmp_path.open("r", newline="") as read_handle:
-                    copy_sql = sql.SQL(
-                        """
-                        COPY {temp_table} (sku, sku_lower, name, description, price, active, created_at, updated_at)
+                    copy_sql = f"""
+                        COPY {quoted_temp_table} (sku, sku_lower, name, description, price, active, created_at, updated_at)
                         FROM STDIN WITH CSV HEADER;
-                        """
-                    ).format(temp_table=sql.Identifier(temp_table_name))
-                    cursor.copy_expert(copy_sql.as_string(cursor), read_handle)
-
-                upsert_sql = sql.SQL(
                     """
+                    cursor.copy_expert(copy_sql, read_handle)
+
+                upsert_sql = f"""
                     INSERT INTO products_product (sku, name, description, price, active, created_at, updated_at)
                     SELECT
                         sku,
@@ -234,7 +222,7 @@ def _copy_batch_to_database(
                         active,
                         created_at,
                         updated_at
-                    FROM {temp_table}
+                    FROM {quoted_temp_table}
                     ON CONFLICT ((lower(sku)))
                     DO UPDATE SET
                         name = EXCLUDED.name,
@@ -242,15 +230,10 @@ def _copy_batch_to_database(
                         price = EXCLUDED.price,
                         active = EXCLUDED.active,
                         updated_at = EXCLUDED.updated_at;
-                    """
-                ).format(temp_table=sql.Identifier(temp_table_name))
+                """
                 cursor.execute(upsert_sql)
             finally:
-                cursor.execute(
-                    sql.SQL("DROP TABLE IF EXISTS {temp_table}").format(
-                        temp_table=sql.Identifier(temp_table_name)
-                    )
-                )
+                # Clean up temp file. Temp table will be auto-dropped by ON COMMIT DROP
                 try:
                     if tmp_path is not None:
                         tmp_path.unlink(missing_ok=True)
@@ -344,8 +327,17 @@ def import_csv_task(self, upload_task_id: str, file_path: str, user_id: Optional
                     continue
                 normalized_rows.append(normalized)
 
+            # Deduplicate by SKU (case-insensitive) - keep last occurrence
+            # This prevents "ON CONFLICT DO UPDATE cannot affect row a second time" errors
+            # when the same batch contains duplicate SKUs
+            seen_skus = {}
+            for row in normalized_rows:
+                sku_lower = row["sku_lower"]
+                seen_skus[sku_lower] = row  # Last occurrence wins
+            deduplicated_rows = list(seen_skus.values())
+
             temp_table_name = f"tmp_products_upload_{upload_task_id[:8]}_{batch_index}"
-            _copy_batch_to_database(normalized_rows, temp_table_name)
+            _copy_batch_to_database(deduplicated_rows, temp_table_name)
 
             job.processed_rows = processed_rows
             job.errors_json = error_details[:MAX_ERROR_RECORDS]
@@ -469,7 +461,7 @@ def bulk_delete_products_task(self, job_id: int, user_id: Optional[int] = None) 
     job.save(update_fields=["status", "total_count", "deleted_count", "errors_json", "updated_at"])
 
     if total == 0:
-        payload = _write_delete_progress(
+        payload = publish_delete_progress(
             job_id,
             status="completed",
             processed=0,
@@ -520,14 +512,14 @@ def bulk_delete_products_task(self, job_id: int, user_id: Optional[int] = None) 
                 job.save(update_fields=["deleted_count", "updated_at"])
 
             payload = publish_delete_progress(
-                    job_id,
-                    status="in_progress",
-                    processed=deleted_count,
-                    total=total,
-                    percent=_calculate_percent(deleted_count, total),
-                    errors=errors,
-                )
-                self.update_state(state="PROGRESS", meta=payload)
+                job_id,
+                status="in_progress",
+                processed=deleted_count,
+                total=total,
+                percent=_calculate_percent(deleted_count, total),
+                errors=errors,
+            )
+            self.update_state(state="PROGRESS", meta=payload)
 
         job.status = DeletionJob.Status.COMPLETED
         job.deleted_count = deleted_count

@@ -10,7 +10,7 @@ cd product-importer-django
 cp .env.example .env
 ```
 
-Edit `.env` with your local credentials (see **Database** and **Redis** sections below).
+Edit `.env` with your local credentials (see **Database** and **RabbitMQ** sections below).
 
 Create a virtual environment (recommended):
 
@@ -77,33 +77,33 @@ Example DSN for `.env`:
 DATABASE_URL=postgres://product_importer:change-me@localhost:5432/product_importer
 ```
 
-## 3. Redis
+## 3. RabbitMQ
 
-- **Ubuntu/Debian:** `sudo apt install redis-server`
-- **macOS (Homebrew):** `brew install redis`
-- **Windows (Chocolatey):** `choco install redis-64`
-- Documentation & binaries: <https://redis.io/docs/getting-started/installation/>
+- **Ubuntu/Debian:** `sudo apt install rabbitmq-server`
+- **macOS (Homebrew):** `brew install rabbitmq`
+- **Windows (Chocolatey):** `choco install rabbitmq`
+- Documentation & binaries: <https://www.rabbitmq.com/download.html>
 
-Start the Redis server (examples):
+Start the RabbitMQ server (examples):
 
 ```bash
 # Ubuntu/macOS (Homebrew services)
-redis-server
+rabbitmq-server
 # macOS with brew services
-brew services start redis
+brew services start rabbitmq
 # Windows (PowerShell, from install directory)
-redis-server.exe
+rabbitmq-server.bat
 ```
 
 Set the connection string in `.env`:
 
 ```
-REDIS_URL=redis://localhost:6379/0
+RABBITMQ_URL=amqp://guest:guest@localhost:5672//
 ```
 
 ## 4. Running the project
 
-Once PostgreSQL and Redis are running and `.venv` is activated:
+Once PostgreSQL and RabbitMQ are running and `.venv` is activated:
 
 ```bash
 python manage.py migrate
@@ -152,7 +152,7 @@ PRODUCT_DELETE_TRUNCATE_THRESHOLD=200000 # use TRUNCATE when record count exceed
 PRODUCT_DELETE_CONFIRM_PHRASE="DELETE ALL PRODUCTS"
 ```
 
-For counts below the threshold, deletion happens synchronously. Above it, a Celery task runs in the background; progress is broadcast over WebSockets (with Redis) and can be monitored on the upload page or via `GET /api/products/deletion/<job_id>/progress/`.
+For counts below the threshold, deletion happens synchronously. Above it, a Celery task runs in the background; progress is broadcast over WebSockets (via RabbitMQ) and can be monitored on the upload page or via `GET /api/products/deletion/<job_id>/progress/`.
 
 ### Webhooks
 
@@ -183,5 +183,5 @@ celery -A config beat --loglevel=info
 
 - Ensure `.env` is present in the project root; `python-dotenv` loads it automatically in `config/settings.py`.
 - If migrations fail, verify PostgreSQL credentials and that the user has permissions on the database.
-- For Redis connection issues, make sure the Redis server is running and accessible at the host/port in `.env`.
+- For RabbitMQ connection issues, make sure the server is running and accessible at the URL in `.env`.
 

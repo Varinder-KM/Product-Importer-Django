@@ -1,80 +1,435 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Product CSV Upload</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; max-width: 720px; }
-        h1 { font-size: 1.8rem; }
-        form { margin-bottom: 2rem; }
-        .actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+{% extends "base.html" %}
+{% block title %}Upload - Product Importer{% endblock %}
+{% block extra_css %}
+<style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #f3f4ff 0%, #f7fbff 40%, #ffffff 100%);
+            --card-bg: #ffffff;
+            --card-border: rgba(15, 23, 42, 0.08);
+            --text-strong: #0f172a;
+            --text-muted: #475569;
+            --accent: #2563eb;
+            --accent-soft: rgba(37, 99, 235, 0.1);
+            --accent-dark: #1d4ed8;
+            --danger: #dc2626;
+            --danger-dark: #b91c1c;
+            --danger-soft: rgba(220, 38, 38, 0.1);
+            --border-radius: 16px;
+            --shadow: 0 18px 45px -18px rgba(15, 23, 42, 0.25);
+            --font: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: var(--bg-gradient);
+        }
+        a { color: var(--accent); }
+        .page {
+            max-width: 1080px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        .page-header {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .page-header h1 {
+            margin: 0;
+            font-size: clamp(1.9rem, 3vw, 2.4rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .page-header p {
+            margin: 0;
+            max-width: 680px;
+            color: var(--text-muted);
+            line-height: 1.55;
+        }
+        .status-chip {
+            align-self: flex-start;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--accent-soft);
+            color: var(--accent-dark);
+            border-radius: 999px;
+            padding: 0.4rem 0.9rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .layout-grid {
+            display: grid;
+            gap: 1.5rem;
+            grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: clamp(1.5rem, 2vw, 2rem);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .card h2 {
+            margin: 0;
+            font-size: 1.35rem;
+            font-weight: 700;
+        }
+        .card-subtitle {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+        form#upload-form {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .file-input {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-strong);
+        }
+        input[type="file"] {
+            padding: 0.85rem;
+            border-radius: 12px;
+            border: 1px dashed rgba(37, 99, 235, 0.45);
+            background: rgba(248, 250, 252, 0.85);
+        }
+        input[type="file"]:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        button {
+            border: none;
+            border-radius: 999px;
+            padding: 0.75rem 1.4rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        button.primary {
+            background: #1d4ed8;
+            color: #ffffff;
+            box-shadow: 0 12px 30px -12px rgba(37, 99, 235, 0.55);
+        }
+        button.primary:hover { background: var(--accent-dark); }
+        button.secondary {
+            background: rgba(15, 23, 42, 0.06);
+            color: var(--text-strong);
+        }
+        button.secondary:hover { background: rgba(15, 23, 42, 0.12); }
+        button.danger {
+            background: var(--danger);
+            color: #ffffff;
+            box-shadow: 0 12px 30px -12px rgba(220, 38, 38, 0.55);
+        }
+        button.danger:hover { background: var(--danger-dark); }
+        .helper-card {
+            gap: 1rem;
+        }
+        .helper-card h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+        .helper-card ul {
+            padding-left: 1.1rem;
+            margin: 0;
+            display: grid;
+            gap: 0.6rem;
+            color: var(--text-muted);
+            font-size: 0.93rem;
+        }
+        .helper-card .highlight {
+            background: rgba(37, 99, 235, 0.08);
+            border-radius: 12px;
+            padding: 1rem;
+            color: var(--accent-dark);
+            font-weight: 600;
+        }
         #progress-container,
-        #delete-progress-container { display: none; margin-top: 1.5rem; }
-        .progress-bar { width: 100%; height: 24px; border: 1px solid #888; border-radius: 4px; overflow: hidden; }
-        .progress-bar-fill { width: 0; height: 100%; background: #2b7fff; transition: width 0.3s ease; }
-        .status-text { margin-top: 0.5rem; font-weight: 500; }
-        .errors-text { margin-top: 1rem; color: #b00020; white-space: pre-wrap; }
-        button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
-        .danger { background: #d32f2f; color: #fff; border: none; }
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        #delete-progress-container {
+            display: none;
+            gap: 1rem;
+        }
+        .status-card {
+            padding: 0;
+            overflow: hidden;
+        }
+        .status-card header {
+            padding: 1.1rem 1.5rem 0.4rem;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+        }
+        .status-card header h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+        .status-card .body {
+            padding: 1.5rem;
+            display: grid;
+            gap: 1rem;
+        }
+        .progress-track {
+            width: 100%;
+            height: 14px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.25);
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent);
+            transition: width 0.35s ease, background 0.2s ease;
+        }
+        #delete-progress-bar-fill {
+            background: var(--danger);
+        }
+        .status-text {
+            font-weight: 600;
+            color: var(--text-strong);
+        }
+        .errors-text {
+            background: var(--danger-soft);
+            color: var(--danger-dark);
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+        }
+        .muted {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .note {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background: rgba(15, 23, 42, 0.04);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+        .checklist {
+            display: grid;
+            gap: 0.75rem;
+        }
+        .checklist-item {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+        .checklist-item span {
+            display: grid;
+            place-items: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--accent-dark);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.35);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1.5rem;
+        }
         .modal-backdrop.show { display: flex; }
-        .modal { background: #fff; padding: 1.5rem; border-radius: 8px; max-width: 420px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        .modal h2 { margin-top: 0; }
-        .modal-actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem; }
-        .confirmation-input { width: 100%; padding: 0.5rem; margin-top: 0.5rem; }
+        .modal {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 2rem;
+            width: min(420px, 90vw);
+            display: grid;
+            gap: 1rem;
+            box-shadow: 0 30px 70px -40px rgba(15, 23, 42, 0.75);
+        }
+        .modal h2 {
+            margin: 0;
+            font-size: 1.35rem;
+        }
+        .confirmation-input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            font-size: 1rem;
+        }
+        .confirmation-input:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-color: transparent;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
         .hidden { display: none !important; }
-        .muted { color: #555; font-size: 0.9rem; margin-top: 0.5rem; }
+        @media (max-width: 960px) {
+            .layout-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 600px) {
+            .page { padding: 1rem; }
+            button { width: 100%; justify-content: center; }
+            .actions { flex-direction: column; }
+        }
     </style>
-</head>
-<body>
-    <h1>Upload Products CSV</h1>
-    <form id="upload-form">
-        {% csrf_token %}
-        <label for="file">Choose CSV file (required)</label><br>
-        <input type="file" id="file" name="file" accept=".csv" required>
-        <div class="actions" style="margin-top: 1rem;">
-            <button type="submit">Start Upload</button>
-            <button type="button" id="delete-products-btn" class="danger">Delete All Products</button>
-        </div>
-    </form>
+{% endblock %}
+{% block content %}
+    <div class="page">
+        <header class="page-header">
+            <h1>Product Import Console</h1>
+            <p>
+                Upload large CSV catalogs, monitor live progress over WebSockets, and manage safe bulk deletions.
+                Your data is processed in batches and streamed directly into the product catalog.
+            </p>
+            <span class="status-chip">Live updates enabled</span>
+        </header>
 
-    <section id="progress-container">
-        <h2>Progress</h2>
-        <div class="progress-bar">
-            <div id="progress-bar-fill" class="progress-bar-fill"></div>
-        </div>
-        <div id="status" class="status-text">Waiting to start...</div>
-        <div id="errors" class="errors-text"></div>
-    </section>
+        <div class="layout-grid">
+            <section class="card upload-card">
+                <div>
+                    <h2>Upload products CSV</h2>
+                    <p class="card-subtitle">
+                        Supported format: UTF-8 CSV with <code>sku</code>, <code>name</code>, <code>price</code>, and optional fields like <code>description</code>.
+                        The importer validates each row and streams progress in real time.
+                    </p>
+                </div>
 
-    <section id="delete-progress-container">
-        <h2>Product Deletion Progress</h2>
-        <div class="progress-bar">
-            <div id="delete-progress-bar-fill" class="progress-bar-fill"></div>
+                <form id="upload-form">
+                    {% csrf_token %}
+                    <div class="file-input">
+                        <label for="file">Choose CSV file <span class="muted">(required)</span></label>
+                        <input type="file" id="file" name="file" accept=".csv" required>
+                        <p class="note">
+                            Tip: Keep column names lowercase with underscores. Large files are chunked automatically using the configured batch size.
+                        </p>
+                    </div>
+                    <div class="actions">
+                        <button type="submit" class="primary">
+                            Start upload
+                        </button>
+                        <button type="button" id="delete-products-btn" class="danger">
+                            Delete all products
+                        </button>
+                    </div>
+                </form>
+
+                <div class="checklist">
+                    <div class="checklist-item">
+                        <span>1</span>
+                        <div>
+                            <strong>Validate locally first.</strong>
+                            Remove blank header rows and ensure consistent column counts.
+                        </div>
+                    </div>
+                    <div class="checklist-item">
+                        <span>2</span>
+                        <div>
+                            <strong>Keep the tab open.</strong>
+                            Closing the browser stops live updates, but the import continues in the background.
+                        </div>
+                    </div>
+                    <div class="checklist-item">
+                        <span>3</span>
+                        <div>
+                            <strong>Review the summary.</strong>
+                            When the import completes, the progress bar turns solid and any row-level errors appear below.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="card helper-card">
+                <h3>Need a sample CSV?</h3>
+                <p class="highlight">Download the template from <code>/static/products_sample.csv</code>.</p>
+                <h3>Before you start</h3>
+                <ul>
+                    <li>Confirm your RabbitMQ worker and Celery worker are running.</li>
+                    <li>Set <code>PRODUCT_IMPORT_BATCH_SIZE</code> in your <code>.env</code> if you need a different throughput.</li>
+                    <li>Check your webhook subscribers to receive import progress events.</li>
+                </ul>
+                <h3>Bulk deletion safety</h3>
+                <p class="card-subtitle">
+                    Deletions above the configured threshold run asynchronously. You will be prompted to type the confirmation phrase before the queue starts.
+                </p>
+            </aside>
         </div>
-        <div id="delete-status" class="status-text">Waiting for deletion...</div>
-        <div id="delete-errors" class="errors-text"></div>
-    </section>
+
+        <section id="progress-container" class="card status-card">
+            <header>
+                <h3>Import progress</h3>
+            </header>
+            <div class="body">
+                <div class="progress-track">
+                    <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                </div>
+                <div id="status" class="status-text">Waiting to start...</div>
+                <div id="errors" class="errors-text hidden"></div>
+            </div>
+        </section>
+
+        <section id="delete-progress-container" class="card status-card">
+            <header>
+                <h3>Product deletion progress</h3>
+            </header>
+            <div class="body">
+                <div class="progress-track">
+                    <div id="delete-progress-bar-fill" class="progress-bar-fill"></div>
+                </div>
+                <div id="delete-status" class="status-text">Waiting for deletion...</div>
+                <div id="delete-errors" class="errors-text hidden"></div>
+            </div>
+        </section>
+    </div>
 
     <div id="delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
         <div class="modal">
-            <h2 id="delete-modal-title">Confirm Deletion</h2>
+            <h2 id="delete-modal-title">Confirm deletion</h2>
             <p>
-                You are about to delete <strong>all products</strong> from the database.
-                This action cannot be undone.
+                You are about to delete <strong>all products</strong> from the catalog.
+                This action is irreversible.
             </p>
             <p class="muted">
                 Type <code>{{ delete_confirm_phrase }}</code> to confirm.
             </p>
             <input type="text" id="confirm-phrase" class="confirmation-input" placeholder="Confirmation phrase">
             <div class="modal-actions">
-                <button type="button" id="cancel-delete-btn">Cancel</button>
+                <button type="button" id="cancel-delete-btn" class="secondary">Cancel</button>
                 <button type="button" id="confirm-delete-btn" class="danger">Delete</button>
             </div>
         </div>
     </div>
-
+{% endblock %}
+{% block extra_js %}
     <script>
         const form = document.getElementById('upload-form');
         const progressContainer = document.getElementById('progress-container');
@@ -103,6 +458,19 @@
             if (parts.length === 2) return parts.pop().split(';').shift();
         }
 
+        function setErrors(element, message) {
+            if (!element) {
+                return;
+            }
+            if (message) {
+                element.textContent = message;
+                element.classList.remove('hidden');
+            } else {
+                element.textContent = '';
+                element.classList.add('hidden');
+            }
+        }
+
         function updateProgress(payload) {
             if (!payload) {
                 return;
@@ -113,9 +481,7 @@
             if (payload.errors && payload.errors > 0) {
                 statusText.textContent += ` • ${payload.errors} errors`;
             }
-            if (payload.error) {
-                errorsEl.textContent = payload.error;
-            }
+            setErrors(errorsEl, payload.error);
         }
 
         function updateDeleteProgress(payload) {
@@ -128,9 +494,7 @@
             if (payload.errors && payload.errors > 0) {
                 deleteStatusText.textContent += ` • ${payload.errors} errors`;
             }
-            if (payload.error) {
-                deleteErrorsEl.textContent = payload.error;
-            }
+            setErrors(deleteErrorsEl, payload.error);
         }
 
         async function pollProgress(taskId) {
@@ -235,7 +599,7 @@
 
         function openDeleteModal() {
             confirmPhraseInput.value = '';
-            deleteErrorsEl.textContent = '';
+            setErrors(deleteErrorsEl, '');
             deleteModal.classList.add('show');
             deleteModal.classList.remove('hidden');
             confirmPhraseInput.focus();
@@ -259,14 +623,14 @@
             const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]').value;
 
             if (deleteConfirmPhrase && phrase !== deleteConfirmPhrase) {
-                deleteErrorsEl.textContent = `Please type '${deleteConfirmPhrase}' to confirm.`;
+                setErrors(deleteErrorsEl, `Please type '${deleteConfirmPhrase}' to confirm.`);
                 return;
             }
 
             deleteProgressContainer.style.display = 'block';
             deleteProgressFill.style.width = '0%';
             deleteStatusText.textContent = 'Starting deletion...';
-            deleteErrorsEl.textContent = '';
+            setErrors(deleteErrorsEl, '');
             confirmDeleteBtn.disabled = true;
 
             try {
@@ -307,7 +671,7 @@
             } catch (err) {
                 console.error(err);
                 deleteStatusText.textContent = 'Deletion failed.';
-                deleteErrorsEl.textContent = err.message;
+                setErrors(deleteErrorsEl, err.message);
             } finally {
                 confirmDeleteBtn.disabled = false;
             }
@@ -329,7 +693,7 @@
             progressContainer.style.display = 'block';
             progressBarFill.style.width = '0%';
             statusText.textContent = 'Uploading...';
-            errorsEl.textContent = '';
+            setErrors(errorsEl, '');
 
             try {
                 const response = await fetch('/api/uploads/', {
@@ -358,9 +722,8 @@
             } catch (err) {
                 console.error(err);
                 statusText.textContent = 'Upload failed.';
-                errorsEl.textContent = err.message;
+                setErrors(errorsEl, err.message);
             }
         });
     </script>
-</body>
-</html>
+{% endblock %}
