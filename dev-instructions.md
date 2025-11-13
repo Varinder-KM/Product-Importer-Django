@@ -116,7 +116,19 @@ Celery worker (in a separate terminal):
 
 ```bash
 celery -A config worker --loglevel=info
+# or
+./scripts/run_celery_worker.sh
 ```
+
+### CSV import tuning
+
+The importer streams CSV rows in batches (default `5,000`). Tweak `PRODUCT_IMPORT_BATCH_SIZE` in `.env` to balance throughput and memory:
+
+```
+PRODUCT_IMPORT_BATCH_SIZE=5000
+```
+
+Larger batches reduce COPY overhead but require more RAM; smaller batches provide more responsive progress updates.
 
 Optional beat scheduler:
 

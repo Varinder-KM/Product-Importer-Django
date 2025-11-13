@@ -12,6 +12,8 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-me")
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes"}
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+PRODUCT_IMPORT_BATCH_SIZE = int(os.getenv("PRODUCT_IMPORT_BATCH_SIZE", "5000"))
 
 allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "")
 ALLOWED_HOSTS = (
@@ -110,17 +112,19 @@ REST_FRAMEWORK = {
     ],
 }
 
-CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = "django-db"
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+CELERY_RESULT_EXTENDED = True
+CELERY_TASK_TRACK_STARTED = True
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [os.getenv("REDIS_URL", "redis://localhost:6379/0")],
+            "hosts": [REDIS_URL],
         },
     },
 }
