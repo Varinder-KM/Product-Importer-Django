@@ -1,4 +1,5 @@
 venv/
+.venv/
 .env
-.env.example
+media/
 __pycache__/

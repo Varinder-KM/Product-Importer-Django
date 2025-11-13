@@ -30,6 +30,12 @@ To install development extras:
 pip install -r requirements-dev.txt
 ```
 
+Create the upload directory structure (once per machine):
+
+```bash
+python scripts/setup_upload_dirs.py
+```
+
 The `Makefile` includes helper targets (POSIX shells). For example:
 
 ```bash
